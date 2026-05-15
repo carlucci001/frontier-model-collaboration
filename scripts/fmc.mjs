@@ -1,0 +1,390 @@
+#!/usr/bin/env node
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir, platform } from "node:os";
+import { spawnSync } from "node:child_process";
+
+const STATE_DIR = join(homedir(), ".frontier-model-collaboration");
+const STATE_FILE = join(STATE_DIR, "state.json");
+const LEDGER_FILE = join(STATE_DIR, "ledger.jsonl");
+const TARGETS_FILE = join(process.cwd(), "frontier-collab.targets.json");
+
+const MODEL_LANES = {
+  codex: {
+    bestFor: ["repo edits", "shell commands", "tests", "builds", "production checks", "final integration"],
+    costSurface: "Codex usage quota",
+  },
+  claude: {
+    bestFor: ["fresh review", "architecture critique", "prompt repair", "test matrices", "long-form reasoning"],
+    costSurface: "Claude subscription or Anthropic API usage",
+  },
+  gemini: {
+    bestFor: ["large-context review", "research synthesis", "alternate critique"],
+    costSurface: "Gemini subscription or API usage",
+  },
+  local: {
+    bestFor: ["summaries", "formatting", "simple transforms", "private draft review"],
+    costSurface: "local compute",
+  },
+};
+
+function parseArgs(argv) {
+  const [command = "help", ...rest] = argv;
+  const flags = {};
+  for (let i = 0; i < rest.length; i += 1) {
+    const token = rest[i];
+    if (!token.startsWith("--")) continue;
+    const key = token.slice(2);
+    const next = rest[i + 1];
+    if (!next || next.startsWith("--")) {
+      flags[key] = true;
+    } else {
+      flags[key] = next;
+      i += 1;
+    }
+  }
+  return { command, flags };
+}
+
+function ensureStateDir() {
+  mkdirSync(STATE_DIR, { recursive: true });
+}
+
+function readState() {
+  if (!existsSync(STATE_FILE)) return {};
+  try {
+    return JSON.parse(readFileSync(STATE_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeState(patch) {
+  ensureStateDir();
+  const state = {
+    ...readState(),
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  };
+  writeFileSync(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`);
+  return state;
+}
+
+function appendLedger(event) {
+  ensureStateDir();
+  const entry = {
+    at: new Date().toISOString(),
+    cwd: process.cwd(),
+    ...event,
+  };
+  writeFileSync(LEDGER_FILE, `${JSON.stringify(entry)}\n`, { flag: "a" });
+}
+
+function arrayValue(value) {
+  if (!value) return [];
+  return String(value)
+    .split(",")
+    .map((item) => item.trim().replace(/\\/g, "/"))
+    .filter(Boolean);
+}
+
+function listValue(value, fallback) {
+  if (!value) return fallback;
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function gitChangedFiles() {
+  const result = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { encoding: "utf8" });
+  if (result.status !== 0) return null;
+  return result.stdout
+    .split(/\r?\n/)
+    .filter((line) => line.trim())
+    .map((line) => {
+      const renamed = line.match(/^R\s+(.+)\s+->\s+(.+)$/);
+      if (renamed) return renamed[2].replace(/\\/g, "/");
+      return line.slice(3).replace(/\\/g, "/");
+    });
+}
+
+function costProfile(flags) {
+  const policy = flags.policy || "balanced";
+  const risk = flags.risk || "medium";
+  const context = flags.context || "medium";
+  const task = String(flags.task || "").toLowerCase();
+  const requestedTo = flags.to ? String(flags.to).toLowerCase() : "";
+
+  let recommendedLane = requestedTo || "claude";
+  let reason = "Secondary review gives fresh eyes while the primary operator keeps ownership.";
+
+  if (policy === "conserve" && risk === "low") {
+    recommendedLane = "local";
+    reason = "Low-risk work should use local or cheaper lanes before spending frontier usage.";
+  } else if (task.match(/\b(deploy|restart|production|ssh|build|test|fix|edit|patch)\b/)) {
+    recommendedLane = "codex";
+    reason = "Repo-changing or production-sensitive work should stay with the primary operator.";
+  } else if (task.match(/\b(review|critique|prompt|architecture|test matrix|risk|ux)\b/)) {
+    recommendedLane = requestedTo || "claude";
+    reason = "Review, critique, prompts, and test design are high-leverage secondary-model tasks.";
+  } else if (context === "large" && policy !== "conserve") {
+    recommendedLane = requestedTo || "gemini";
+    reason = "Large-context work may benefit from a large-context review lane if available.";
+  }
+
+  const lane = MODEL_LANES[recommendedLane] || MODEL_LANES.claude;
+  return {
+    policy,
+    risk,
+    context,
+    recommendedLane,
+    reason,
+    costSurface: lane.costSurface,
+    bestFor: lane.bestFor,
+  };
+}
+
+function createPacket(flags) {
+  const from = flags.from || "primary";
+  const to = flags.to || "review-model";
+  const task = flags.task || "Review the current work and return bounded feedback.";
+  const role = flags.role || `${to} is the secondary model. ${from} remains the primary operator.`;
+  const allowed = listValue(flags.files, "[list exact files, diff, or context]");
+  const readOnly = listValue(flags["read-only"] || flags.readonly, "All files unless explicitly owned.");
+  const format = flags.format || "REVIEW_ONLY";
+  const budget = flags.budget || "One concise pass. Prioritize high-impact issues.";
+  const limits = flags.limits || "No production actions unless explicitly approved.";
+  const cost = costProfile(flags);
+
+  return `TASK:
+${task}
+
+ROLE:
+${role}
+
+DO:
+${flags.do || "- Stay within the assigned role.\n- Return only the requested output.\n- State any assumptions or missing context."}
+
+DO NOT:
+${flags["do-not"] || "- Edit files unless explicitly allowed.\n- Run deploys or restarts.\n- Ask for or reveal secrets.\n- Redesign unrelated systems."}
+
+FILES ALLOWED:
+${allowed}
+
+FILES READ-ONLY:
+${readOnly}
+
+PRODUCTION LIMITS:
+${limits}
+
+OUTPUT FORMAT:
+${format}
+
+TIME/USAGE BUDGET:
+${budget}
+
+COST / ROUTING FACTORS:
+Policy: ${cost.policy}
+Risk: ${cost.risk}
+Context size: ${cost.context}
+Recommended lane: ${cost.recommendedLane}
+Why: ${cost.reason}
+Usage surface: ${cost.costSurface}
+`;
+}
+
+function copyToClipboard(text) {
+  const sys = platform();
+  if (sys === "win32") {
+    const result = spawnSync("clip.exe", { input: text, encoding: "utf8" });
+    return result.status === 0;
+  }
+  if (sys === "darwin") {
+    const result = spawnSync("pbcopy", { input: text, encoding: "utf8" });
+    return result.status === 0;
+  }
+  for (const command of ["wl-copy", "xclip", "xsel"]) {
+    const result = spawnSync(command, command === "xclip" ? ["-selection", "clipboard"] : [], {
+      input: text,
+      encoding: "utf8",
+    });
+    if (result.status === 0) return true;
+  }
+  return false;
+}
+
+function notify(title, message) {
+  const sys = platform();
+  if (sys === "win32") {
+    const script = `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$n = New-Object System.Windows.Forms.NotifyIcon
+$n.Icon = [System.Drawing.SystemIcons]::Information
+$n.Visible = $true
+$n.ShowBalloonTip(4000, ${psQuote(title)}, ${psQuote(message)}, [System.Windows.Forms.ToolTipIcon]::Info)
+Start-Sleep -Seconds 5
+$n.Dispose()
+`;
+    spawnSync("powershell.exe", ["-NoProfile", "-STA", "-Command", script], { stdio: "ignore" });
+    return;
+  }
+  if (sys === "darwin") {
+    spawnSync("osascript", ["-e", `display notification ${jsonQuote(message)} with title ${jsonQuote(title)}`], {
+      stdio: "ignore",
+    });
+    return;
+  }
+  spawnSync("notify-send", [title, message], { stdio: "ignore" });
+}
+
+function psQuote(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function jsonQuote(value) {
+  return JSON.stringify(String(value));
+}
+
+function openTarget(name) {
+  if (!existsSync(TARGETS_FILE)) {
+    console.error(`No ${TARGETS_FILE} found. Copy examples/frontier-collab.targets.example.json first.`);
+    return false;
+  }
+  const targets = JSON.parse(readFileSync(TARGETS_FILE, "utf8"));
+  const target = targets[name];
+  if (!target || !target.command) {
+    console.error(`Target "${name}" is not configured.`);
+    return false;
+  }
+  const args = Array.isArray(target.args) ? target.args : [];
+  const result = spawnSync(target.command, args, { stdio: "ignore", shell: Boolean(target.shell) });
+  return result.status === 0;
+}
+
+function printHelp() {
+  console.log(`Frontier Model Collaboration Switchboard
+
+Usage:
+  fmc handoff --from codex --to claude --task "Review this diff" --files "app/a.js,lib/b.js" --copy --notify
+  fmc recommend --task "Review agent prompt transfer behavior" --risk high --context medium --policy balanced
+  fmc state --owner codex --mode implementation --task "Fix transfer latency"
+  fmc status
+  fmc check
+  fmc complete
+
+Options:
+  --copy             Copy handoff packet to clipboard.
+  --notify           Show a desktop nudge where supported.
+  --open-target NAME Open a locally configured target from frontier-collab.targets.json.
+  --policy NAME      Cost policy: conserve, balanced, max-quality.
+  --risk NAME        Task risk: low, medium, high.
+  --context NAME     Context size: small, medium, large.
+`);
+}
+
+const { command, flags } = parseArgs(process.argv.slice(2));
+
+if (command === "handoff") {
+  const packet = createPacket(flags);
+  const to = flags.to || "review-model";
+  const from = flags.from || "primary";
+  writeState({
+    activeOwner: from,
+    handoffTo: to,
+    mode: "handoff",
+    task: flags.task || "Review handoff",
+    allowedFiles: arrayValue(flags.files),
+    readOnlyFiles: arrayValue(flags["read-only"] || flags.readonly),
+    outputFormat: flags.format || "REVIEW_ONLY",
+    productionLimits: flags.limits || "No production actions unless explicitly approved.",
+    costProfile: costProfile(flags),
+    lastPacketPath: null,
+  });
+  appendLedger({
+    type: "handoff",
+    from,
+    to,
+    task: flags.task || "Review handoff",
+    outputFormat: flags.format || "REVIEW_ONLY",
+    allowedFiles: arrayValue(flags.files),
+    costProfile: costProfile(flags),
+  });
+  console.log(packet);
+  if (flags.copy) {
+    console.error(copyToClipboard(packet) ? "Copied handoff packet to clipboard." : "Clipboard copy was not available.");
+  }
+  if (flags.notify) {
+    notify("Frontier Model Handoff", `Switching from ${from} to ${to}`);
+  }
+  if (flags["open-target"]) {
+    openTarget(flags["open-target"]);
+  }
+} else if (command === "state") {
+  const state = writeState({
+    activeOwner: flags.owner || flags.model || "primary",
+    mode: flags.mode || "working",
+    task: flags.task || "",
+  });
+  appendLedger({ type: "state", activeOwner: state.activeOwner, mode: state.mode, task: state.task });
+  console.log(JSON.stringify(state, null, 2));
+  if (flags.notify) {
+    notify("Frontier Model State", `${state.activeOwner}: ${state.mode}`);
+  }
+} else if (command === "status") {
+  const state = readState();
+  if (!Object.keys(state).length) {
+    console.log("No active frontier model collaboration state.");
+  } else {
+    console.log(JSON.stringify(state, null, 2));
+  }
+} else if (command === "recommend") {
+  const cost = costProfile(flags);
+  console.log(JSON.stringify({
+    task: flags.task || "",
+    policy: cost.policy,
+    risk: cost.risk,
+    context: cost.context,
+    recommendedLane: cost.recommendedLane,
+    usageSurface: cost.costSurface,
+    bestFor: cost.bestFor,
+    reason: cost.reason,
+  }, null, 2));
+} else if (command === "check") {
+  const state = readState();
+  const changed = gitChangedFiles();
+  if (!changed) {
+    console.error("Could not read git status. Run fmc check inside a git repository.");
+    process.exitCode = 2;
+  } else {
+    const allowed = Array.isArray(state.allowedFiles) ? state.allowedFiles : [];
+    const outside = allowed.length
+      ? changed.filter((file) => !allowed.some((allowedFile) => file === allowedFile || file.startsWith(`${allowedFile}/`)))
+      : [];
+    const report = {
+      activeOwner: state.activeOwner || null,
+      handoffTo: state.handoffTo || null,
+      mode: state.mode || null,
+      outputFormat: state.outputFormat || null,
+      changedFiles: changed,
+      allowedFiles: allowed,
+      outsideBoundary: outside,
+      ok: allowed.length ? outside.length === 0 : true,
+      warning: allowed.length ? null : "No allowedFiles boundary is active. Create a handoff with --files to enable drift checks.",
+    };
+    appendLedger({ type: "check", ok: report.ok, outsideBoundary: outside });
+    console.log(JSON.stringify(report, null, 2));
+    if (outside.length) process.exitCode = 1;
+  }
+} else if (command === "complete") {
+  const state = writeState({ activeOwner: null, handoffTo: null, mode: "complete", task: "" });
+  appendLedger({ type: "complete" });
+  console.log(JSON.stringify(state, null, 2));
+  if (flags.notify) {
+    notify("Frontier Model Collaboration", "Work marked complete");
+  }
+} else {
+  printHelp();
+}

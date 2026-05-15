@@ -1,0 +1,22 @@
+{
+  "name": "frontier-model-collaboration",
+  "version": "0.2.0",
+  "description": "Agent Skill and handoff switchboard for safely coordinating Codex, Claude, and other frontier AI models.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "fmc": "./scripts/fmc.mjs"
+  },
+  "scripts": {
+    "check": "node scripts/fmc.mjs status"
+  },
+  "keywords": [
+    "agent-skills",
+    "codex",
+    "claude-code",
+    "multi-agent",
+    "llm-orchestration",
+    "ai-coding",
+    "agent-handoff"
+  ]
+}

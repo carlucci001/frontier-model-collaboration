@@ -74,6 +74,27 @@ Use premium models where they create leverage:
 
 Prefer short handoffs over full-context transcripts. Pass only the files, logs, and constraints needed for the subtask.
 
+## FMC Switchboard
+
+If this repo's `scripts/fmc.mjs` is available, prefer it for repeatable handoffs:
+
+```bash
+node scripts/fmc.mjs handoff --from codex --to claude --task "Review this diff" --copy --notify
+node scripts/fmc.mjs recommend --task "Review agent prompt behavior" --risk high --context medium --policy balanced
+node scripts/fmc.mjs state --owner codex --mode implementation --task "Fix production bug"
+node scripts/fmc.mjs status
+node scripts/fmc.mjs check
+node scripts/fmc.mjs complete
+```
+
+Use `--copy` to put the handoff packet on the clipboard. Use `--notify` to make the model switch visible on supported desktops.
+
+Use `recommend` or handoff flags `--policy`, `--risk`, and `--context` when the user cares about balancing premium usage. Treat the result as a transparent routing recommendation, not an automatic billing promise.
+
+Only use `--open-target` when the user has configured `frontier-collab.targets.json` locally. Do not invent application paths or automate secret-bearing windows.
+
+Use `check` before integrating external feedback. It compares the current git working tree to the active handoff's allowed files and warns when changes drift outside the boundary.
+
 ## Five Practical Use Cases
 
 1. **Production bug triage**: Codex checks services and logs while Claude reviews the suspect code path and proposes likely failure modes.

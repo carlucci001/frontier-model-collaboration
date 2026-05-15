@@ -58,6 +58,78 @@ Or:
 Use frontier-model-collaboration. Codex owns implementation and deploy. Claude should review the diff only and return findings.
 ```
 
+## FMC Switchboard
+
+This repo also includes a tiny dependency-free CLI called **FMC Switchboard**.
+
+It helps make model handoffs visible:
+
+- generates a clean handoff packet
+- shows cost/routing factors for the handoff
+- records who owns the work in `~/.frontier-model-collaboration/state.json`
+- copies the packet to your clipboard
+- optionally shows a desktop notification
+- optionally opens a locally configured target, such as Claude, ChatGPT, or your IDE
+
+Run from this repo:
+
+```bash
+node scripts/fmc.mjs handoff --from codex --to claude --task "Review this diff for production risk" --files "app/api/auth/login/route.js,lib/auth.js" --copy --notify
+```
+
+Or, after installing as a package:
+
+```bash
+fmc handoff --from codex --to claude --task "Review this patch" --copy --notify
+fmc recommend --task "Review agent prompt transfer behavior" --risk high --context medium --policy balanced
+fmc state --owner codex --mode implementation --task "Fix transfer latency"
+fmc status
+fmc check
+fmc complete
+```
+
+Cost routing is intentionally transparent rather than magic. FMC shows:
+
+- `policy`: `conserve`, `balanced`, or `max-quality`
+- `risk`: `low`, `medium`, or `high`
+- `context`: `small`, `medium`, or `large`
+- recommended lane: `codex`, `claude`, `gemini`, or `local`
+- usage surface: subscription quota, API usage, or local compute
+- why that lane was recommended
+
+Example:
+
+```bash
+fmc handoff --from codex --to claude --task "Review transfer prompt behavior" --risk high --context medium --policy conserve
+```
+
+`fmc check` compares the current git working tree against the active handoff boundary. If the handoff only allowed `app/api/auth/login/route.js` and something else changed, it reports the drift before two models accidentally step on the same work.
+
+To open local targets, copy the example config:
+
+```bash
+cp examples/frontier-collab.targets.example.json frontier-collab.targets.json
+```
+
+Then run:
+
+```bash
+fmc handoff --from codex --to claude --task "Review this patch" --copy --notify --open-target claude-web
+```
+
+The target file is intentionally local. This avoids shipping hard-coded app paths or unsafe automation into everyone else's machine.
+
+## Collaboration Ledger
+
+FMC writes local coordination state to:
+
+```text
+~/.frontier-model-collaboration/state.json
+~/.frontier-model-collaboration/ledger.jsonl
+```
+
+The ledger records action type, timestamp, working folder, active owner, and boundary results. It does not log secrets, clipboard contents, model responses, or file contents.
+
 ## Good Handoff Packet
 
 ```text
@@ -98,6 +170,8 @@ It is a small workflow layer for human-supervised engineering teams who want to 
 ## Repository Layout
 
 ```text
+package.json
+scripts/fmc.mjs
 skills/frontier-model-collaboration/SKILL.md
 skills/frontier-model-collaboration/agents/openai.yaml
 examples/

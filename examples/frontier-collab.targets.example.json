@@ -1,0 +1,17 @@
+{
+  "claude-web": {
+    "command": "cmd",
+    "args": ["/c", "start", "https://claude.ai"],
+    "shell": false
+  },
+  "chatgpt-web": {
+    "command": "cmd",
+    "args": ["/c", "start", "https://chatgpt.com"],
+    "shell": false
+  },
+  "vscode-current-folder": {
+    "command": "code",
+    "args": ["."],
+    "shell": false
+  }
+}
