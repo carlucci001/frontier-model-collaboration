@@ -34,7 +34,50 @@ Developers are already using Codex, Claude, Gemini, and local models together. T
 
 This skill turns that into a repeatable operating protocol.
 
-## Install
+## 60-Second Install And Proof
+
+Clone the repo:
+
+```bash
+git clone https://github.com/carlucci001/frontier-model-collaboration.git
+cd frontier-model-collaboration
+```
+
+Install the skill into Codex:
+
+```bash
+node scripts/fmc.mjs install-skill
+```
+
+Then restart Codex or open a new agent session so the skill registry refreshes.
+
+Prove the switchboard works:
+
+```bash
+node scripts/fmc.mjs smoke
+```
+
+That creates this visible file in the current project:
+
+```text
+FMC_ACTIVE.md
+```
+
+Open it. The first line should say:
+
+```text
+FMC ACTIVE: codex owns repo/work surface; claude is review-only.
+```
+
+That is the simplest proof that FMC is engaged.
+
+Check the install:
+
+```bash
+node scripts/fmc.mjs doctor
+```
+
+## Manual Install
 
 Copy the skill folder into your agent skills directory:
 
@@ -91,6 +134,9 @@ Or, after installing as a package:
 
 ```bash
 fmc handoff --from codex --to claude --task "Review this patch" --copy --notify
+fmc install-skill
+fmc smoke
+fmc doctor
 fmc recommend --task "Review agent prompt transfer behavior" --risk high --context medium --policy balanced
 fmc state --owner codex --mode implementation --task "Fix transfer latency"
 fmc status

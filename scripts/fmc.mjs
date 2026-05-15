@@ -1,12 +1,15 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { homedir, platform } from "node:os";
 import { spawnSync } from "node:child_process";
 
 const STATE_DIR = join(homedir(), ".frontier-model-collaboration");
 const STATE_FILE = join(STATE_DIR, "state.json");
 const LEDGER_FILE = join(STATE_DIR, "ledger.jsonl");
+const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const SKILL_SOURCE_DIR = join(PACKAGE_ROOT, "skills", "frontier-model-collaboration");
 const TARGETS_FILE = join(process.cwd(), "frontier-collab.targets.json");
 const WORKSPACE_STATUS_DIR = join(process.cwd(), ".frontier-collab");
 const WORKSPACE_STATUS_FILE = join(WORKSPACE_STATUS_DIR, "ACTIVE.md");
@@ -309,10 +312,80 @@ function openTarget(name) {
   return result.status === 0;
 }
 
+function defaultSkillDest() {
+  const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
+  return join(codexHome, "skills", "frontier-model-collaboration");
+}
+
+function installSkill(flags) {
+  const dest = flags.dest || defaultSkillDest();
+  const destExists = existsSync(join(dest, "SKILL.md"));
+  if (destExists && !flags.force) {
+    return {
+      ok: true,
+      installed: true,
+      changed: false,
+      skillPath: dest,
+      message: "Skill already installed. Use --force to overwrite it with this package copy.",
+    };
+  }
+  mkdirSync(dirname(dest), { recursive: true });
+  cpSync(SKILL_SOURCE_DIR, dest, { recursive: true, force: true });
+  return {
+    ok: true,
+    installed: true,
+    changed: true,
+    skillPath: dest,
+    message: "Skill installed. Restart Codex or open a new agent session so the skill registry refreshes.",
+  };
+}
+
+function doctor(flags) {
+  const dest = flags.dest || defaultSkillDest();
+  const checks = [
+    { name: "package skill exists", ok: existsSync(join(SKILL_SOURCE_DIR, "SKILL.md")) },
+    { name: "package metadata exists", ok: existsSync(join(SKILL_SOURCE_DIR, "agents", "openai.yaml")) },
+    { name: "installed skill exists", ok: existsSync(join(dest, "SKILL.md")), path: dest },
+    { name: "workspace badge exists", ok: existsSync(VISIBLE_STATUS_FILE), path: VISIBLE_STATUS_FILE },
+  ];
+  const ok = checks.every((check) => check.ok);
+  return { ok, checks };
+}
+
+function smoke(flags) {
+  const from = flags.from || "codex";
+  const to = flags.to || "claude";
+  const mode = flags.format || "REVIEW_ONLY";
+  const state = writeState({
+    activeOwner: from,
+    handoffTo: to,
+    mode: "handoff",
+    task: flags.task || "FMC smoke test: prove the switchboard is active.",
+    allowedFiles: arrayValue(flags.files || "FMC_ACTIVE.md"),
+    readOnlyFiles: [],
+    outputFormat: mode,
+    productionLimits: "No production actions. Smoke test only.",
+    costProfile: costProfile({ ...flags, from, to }),
+    lastPacketPath: null,
+  });
+  appendLedger({ type: "smoke", from, to, outputFormat: mode });
+  if (flags.notify) notify("FMC Active", `${from} owns repo; ${to} is ${mode.toLowerCase().replace(/_/g, "-")}`);
+  return {
+    ok: true,
+    active: activationLine({ from, to, mode }),
+    badge: VISIBLE_STATUS_FILE,
+    state,
+    next: "Open FMC_ACTIVE.md in your IDE. If the first line says FMC ACTIVE, the switchboard is working.",
+  };
+}
+
 function printHelp() {
   console.log(`Frontier Model Collaboration Switchboard
 
 Usage:
+  fmc install-skill
+  fmc smoke
+  fmc doctor
   fmc handoff --from codex --to claude --task "Review this diff" --files "app/a.js,lib/b.js" --copy --notify
   fmc recommend --task "Review agent prompt transfer behavior" --risk high --context medium --policy balanced
   fmc state --owner codex --mode implementation --task "Fix transfer latency"
@@ -328,6 +401,8 @@ Options:
   --policy NAME      Cost policy: conserve, balanced, max-quality.
   --risk NAME        Task risk: low, medium, high.
   --context NAME     Context size: small, medium, large.
+  --dest PATH        Skill install destination.
+  --force            Overwrite an existing installed skill.
 `);
 }
 
@@ -392,6 +467,28 @@ if (command === "handoff") {
   const state = readState();
   writeWorkspaceStatus(state);
   console.log(VISIBLE_STATUS_FILE);
+} else if (command === "install-skill") {
+  const result = installSkill(flags);
+  console.log(`${result.changed ? "FMC INSTALL OK" : "FMC ALREADY INSTALLED"}
+Skill path: ${result.skillPath}
+${result.message}
+
+Next:
+1. Restart Codex or open a new agent session.
+2. Run: fmc smoke
+3. Open: FMC_ACTIVE.md`);
+} else if (command === "doctor") {
+  const result = doctor(flags);
+  console.log(JSON.stringify(result, null, 2));
+  if (!result.ok) process.exitCode = 1;
+} else if (command === "smoke") {
+  const result = smoke(flags);
+  console.log(`${result.active}
+
+Smoke test passed.
+Badge file: ${result.badge}
+
+${result.next}`);
 } else if (command === "recommend") {
   const cost = costProfile(flags);
   console.log(JSON.stringify({
