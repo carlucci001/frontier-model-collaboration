@@ -9,6 +9,22 @@ metadata:
 
 Use this skill when a user wants multiple high-end AI models to collaborate on engineering, research, review, planning, debugging, or product work.
 
+## Activation Signal
+
+When this skill is actively used, start the response with a short visible line:
+
+```text
+FMC ACTIVE: [primary owner] owns [work surface]; [secondary model] is [role/output mode].
+```
+
+Examples:
+
+- `FMC ACTIVE: Codex owns repo edits; Claude is review-only.`
+- `FMC ACTIVE: Codex owns production; Gemini is planning-only.`
+- `FMC ACTIVE: Claude is critiquing prompts; Codex integrates accepted changes.`
+
+Keep the signal short. Do not repeat it on every paragraph. Use it once when the skill starts a handoff, recommendation, check, or integration.
+
 ## Core Rule
 
 One model owns the work surface at a time. Other models produce bounded packets: reviews, plans, critiques, test matrices, prompts, or patches limited to explicit files.

@@ -28,6 +28,11 @@ const MODEL_LANES = {
   },
 };
 
+function activationLine({ from = "primary", to = "secondary", mode = "REVIEW_ONLY" } = {}) {
+  const role = String(mode).toLowerCase().replace(/_/g, "-");
+  return `FMC ACTIVE: ${from} owns repo/work surface; ${to} is ${role}.`;
+}
+
 function parseArgs(argv) {
   const [command = "help", ...rest] = argv;
   const flags = {};
@@ -158,7 +163,9 @@ function createPacket(flags) {
   const limits = flags.limits || "No production actions unless explicitly approved.";
   const cost = costProfile(flags);
 
-  return `TASK:
+  return `${activationLine({ from, to, mode: format })}
+
+TASK:
 ${task}
 
 ROLE:
@@ -291,6 +298,7 @@ if (command === "handoff") {
   const packet = createPacket(flags);
   const to = flags.to || "review-model";
   const from = flags.from || "primary";
+  const mode = flags.format || "REVIEW_ONLY";
   writeState({
     activeOwner: from,
     handoffTo: to,
@@ -298,7 +306,7 @@ if (command === "handoff") {
     task: flags.task || "Review handoff",
     allowedFiles: arrayValue(flags.files),
     readOnlyFiles: arrayValue(flags["read-only"] || flags.readonly),
-    outputFormat: flags.format || "REVIEW_ONLY",
+    outputFormat: mode,
     productionLimits: flags.limits || "No production actions unless explicitly approved.",
     costProfile: costProfile(flags),
     lastPacketPath: null,
@@ -308,7 +316,7 @@ if (command === "handoff") {
     from,
     to,
     task: flags.task || "Review handoff",
-    outputFormat: flags.format || "REVIEW_ONLY",
+    outputFormat: mode,
     allowedFiles: arrayValue(flags.files),
     costProfile: costProfile(flags),
   });
@@ -329,6 +337,7 @@ if (command === "handoff") {
     task: flags.task || "",
   });
   appendLedger({ type: "state", activeOwner: state.activeOwner, mode: state.mode, task: state.task });
+  console.error(`FMC ACTIVE: ${state.activeOwner} owns current ${state.mode} work.`);
   console.log(JSON.stringify(state, null, 2));
   if (flags.notify) {
     notify("Frontier Model State", `${state.activeOwner}: ${state.mode}`);
