@@ -1,0 +1,7 @@
+interface:
+  display_name: "Frontier Model Collaboration"
+  short_description: "Coordinate top AI models without collisions."
+  default_prompt: "Use $frontier-model-collaboration to route work between multiple AI models, define ownership boundaries, create compact handoff packets, control cost, and prevent overlapping edits or production mistakes."
+
+policy:
+  allow_implicit_invocation: true
