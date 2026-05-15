@@ -101,13 +101,21 @@ fmc complete
 
 ## How To Tell It Is Active In Your IDE
 
-FMC writes this file in the project where you run it:
+FMC writes this visible file in the project where you run it:
+
+```text
+FMC_ACTIVE.md
+```
+
+Open that file in your IDE and keep it pinned.
+
+FMC also writes a hidden copy for tooling:
 
 ```text
 .frontier-collab/ACTIVE.md
 ```
 
-Open that file in your IDE and keep it pinned. If FMC is engaged, the first line says something like:
+If FMC is engaged, the first line says something like:
 
 ```text
 FMC ACTIVE: codex owns repo/work surface; claude is review-only.
@@ -163,6 +171,7 @@ FMC writes local coordination state to:
 ```text
 ~/.frontier-model-collaboration/state.json
 ~/.frontier-model-collaboration/ledger.jsonl
+FMC_ACTIVE.md
 .frontier-collab/ACTIVE.md
 ```
 

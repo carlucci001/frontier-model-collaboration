@@ -106,7 +106,7 @@ node scripts/fmc.mjs complete
 
 Use `--copy` to put the handoff packet on the clipboard. Use `--notify` to make the model switch visible on supported desktops.
 
-Tell users they can see activation inside their IDE by opening `.frontier-collab/ACTIVE.md` in the project where FMC is running. The first line should say `FMC ACTIVE` when a handoff or model ownership state is active.
+Tell users they can see activation inside their IDE by opening `FMC_ACTIVE.md` in the project where FMC is running. The first line should say `FMC ACTIVE` when a handoff or model ownership state is active. A hidden tooling copy is also written to `.frontier-collab/ACTIVE.md`.
 
 Use `recommend` or handoff flags `--policy`, `--risk`, and `--context` when the user cares about balancing premium usage. Treat the result as a transparent routing recommendation, not an automatic billing promise.
 
