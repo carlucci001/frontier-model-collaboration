@@ -162,6 +162,9 @@ function costProfile(flags) {
   const context = flags.context || "medium";
   const task = String(flags.task || "").toLowerCase();
   const requestedTo = flags.to ? String(flags.to).toLowerCase() : "";
+  const format = String(flags.format || "").toUpperCase();
+  const nonEditingOutput = ["DESIGN_SPEC", "REVIEW_ONLY", "PLAN_ONLY", "TEST_MATRIX", "PROMPT_DRAFT"].includes(format);
+  const explicitNoEdit = task.match(/\b(without modifying|do not modify|no code|no edits|design proposal|design spec)\b/);
 
   let recommendedLane = requestedTo || "claude";
   let reason = "Secondary review gives fresh eyes while the primary operator keeps ownership.";
@@ -169,6 +172,9 @@ function costProfile(flags) {
   if (policy === "conserve" && risk === "low") {
     recommendedLane = "local";
     reason = "Low-risk work should use local or cheaper lanes before spending frontier usage.";
+  } else if (nonEditingOutput || explicitNoEdit) {
+    recommendedLane = requestedTo || "claude";
+    reason = "Non-editing specs, reviews, and plans are safe high-leverage secondary-model work.";
   } else if (task.match(/\b(deploy|restart|production|ssh|build|test|fix|edit|patch)\b/)) {
     recommendedLane = "codex";
     reason = "Repo-changing or production-sensitive work should stay with the primary operator.";
