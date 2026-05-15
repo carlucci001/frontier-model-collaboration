@@ -73,6 +73,7 @@ This repo also includes a tiny dependency-free CLI called **FMC Switchboard**.
 It helps make model handoffs visible:
 
 - prints an `FMC ACTIVE` line when a handoff starts
+- writes `.frontier-collab/ACTIVE.md` so your IDE has a visible status file
 - generates a clean handoff packet
 - shows cost/routing factors for the handoff
 - records who owns the work in `~/.frontier-model-collaboration/state.json`
@@ -93,8 +94,35 @@ fmc handoff --from codex --to claude --task "Review this patch" --copy --notify
 fmc recommend --task "Review agent prompt transfer behavior" --risk high --context medium --policy balanced
 fmc state --owner codex --mode implementation --task "Fix transfer latency"
 fmc status
+fmc badge
 fmc check
 fmc complete
+```
+
+## How To Tell It Is Active In Your IDE
+
+FMC writes this file in the project where you run it:
+
+```text
+.frontier-collab/ACTIVE.md
+```
+
+Open that file in your IDE and keep it pinned. If FMC is engaged, the first line says something like:
+
+```text
+FMC ACTIVE: codex owns repo/work surface; claude is review-only.
+```
+
+If no handoff is active, it says:
+
+```text
+FMC IDLE: No active model handoff.
+```
+
+You can refresh the badge at any time:
+
+```bash
+fmc badge
 ```
 
 Cost routing is intentionally transparent rather than magic. FMC shows:
@@ -135,9 +163,10 @@ FMC writes local coordination state to:
 ```text
 ~/.frontier-model-collaboration/state.json
 ~/.frontier-model-collaboration/ledger.jsonl
+.frontier-collab/ACTIVE.md
 ```
 
-The ledger records action type, timestamp, working folder, active owner, and boundary results. It does not log secrets, clipboard contents, model responses, or file contents.
+The ledger records action type, timestamp, working folder, active owner, and boundary results. The IDE status file shows the current owner, secondary model, task, routing lane, and allowed files. FMC does not log secrets, clipboard contents, model responses, or file contents.
 
 ## Good Handoff Packet
 
