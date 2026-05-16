@@ -98,6 +98,8 @@ If this repo's `scripts/fmc.mjs` is available, prefer it for repeatable handoffs
 node scripts/fmc.mjs install-skill
 node scripts/fmc.mjs smoke
 node scripts/fmc.mjs doctor
+node scripts/fmc.mjs coach --open
+node scripts/fmc.mjs copy --to claude --task "Review this bug"
 node scripts/fmc.mjs handoff --from codex --to claude --task "Review this diff" --copy --notify
 node scripts/fmc.mjs recommend --task "Review agent prompt behavior" --risk high --context medium --policy balanced
 node scripts/fmc.mjs state --owner codex --mode implementation --task "Fix production bug"
@@ -108,6 +110,10 @@ node scripts/fmc.mjs complete
 ```
 
 Use `--copy` to put the handoff packet on the clipboard. Use `--notify` to make the model switch visible on supported desktops.
+
+For microphone users, prefer `copy` over `handoff --copy`. It copies the packet and prints a short confirmation instead of the full handoff text.
+
+For users who need visual guidance, prefer `coach --open`. It creates a local `FMC_COACH.html` panel with large buttons and current owner state. The panel is local-only and does not call models or send files.
 
 Tell users they can see activation inside their IDE by opening `FMC_ACTIVE.md` in the project where FMC is running. The first line should say `FMC ACTIVE` when a handoff or model ownership state is active. A hidden tooling copy is also written to `.frontier-collab/ACTIVE.md`.
 

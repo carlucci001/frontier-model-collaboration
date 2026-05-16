@@ -116,7 +116,7 @@ This repo also includes a tiny dependency-free CLI called **FMC Switchboard**.
 It helps make model handoffs visible:
 
 - prints an `FMC ACTIVE` line when a handoff starts
-- writes `.frontier-collab/ACTIVE.md` so your IDE has a visible status file
+- writes `FMC_ACTIVE.md` so your IDE has a visible status file
 - generates a clean handoff packet
 - shows cost/routing factors for the handoff
 - records who owns the work in `~/.frontier-model-collaboration/state.json`
@@ -134,9 +134,11 @@ Or, after installing as a package:
 
 ```bash
 fmc handoff --from codex --to claude --task "Review this patch" --copy --notify
+fmc copy --to claude --task "Review this patch"
 fmc install-skill
 fmc smoke
 fmc doctor
+fmc coach --open
 fmc recommend --task "Review agent prompt transfer behavior" --risk high --context medium --policy balanced
 fmc state --owner codex --mode implementation --task "Fix transfer latency"
 fmc status
@@ -144,6 +146,37 @@ fmc badge
 fmc check
 fmc complete
 ```
+
+For microphone and accessibility workflows, use the short command:
+
+```bash
+fmc copy --to claude --task "Review this bug and tell Codex what is risky"
+```
+
+It copies the handoff packet to the clipboard and prints only a short confirmation instead of the full packet.
+
+## FMC Coach Panel
+
+For people who do better with visual cues than terminal text, open the local coach panel:
+
+```bash
+fmc coach --open
+```
+
+It creates:
+
+```text
+FMC_COACH.html
+```
+
+The panel has large buttons:
+
+- `Copy Handoff`
+- `Open Claude`
+- `Open ChatGPT`
+- `Copy Handback Phrase`
+
+It also shows the active owner, secondary model, current mode, and recommended lane. The panel is local HTML. It does not call an AI model, send files, or run background automation.
 
 ## How To Tell It Is Active In Your IDE
 

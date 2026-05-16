@@ -14,6 +14,7 @@ const TARGETS_FILE = join(process.cwd(), "frontier-collab.targets.json");
 const WORKSPACE_STATUS_DIR = join(process.cwd(), ".frontier-collab");
 const WORKSPACE_STATUS_FILE = join(WORKSPACE_STATUS_DIR, "ACTIVE.md");
 const VISIBLE_STATUS_FILE = join(process.cwd(), "FMC_ACTIVE.md");
+const COACH_PANEL_FILE = join(process.cwd(), "FMC_COACH.html");
 
 const MODEL_LANES = {
   codex: {
@@ -199,7 +200,7 @@ function costProfile(flags) {
 }
 
 function createPacket(flags) {
-  const from = flags.from || "primary";
+  const from = flags.from || "codex";
   const to = flags.to || "review-model";
   const task = flags.task || "Review the current work and return bounded feedback.";
   const role = flags.role || `${to} is the secondary model. ${from} remains the primary operator.`;
@@ -318,6 +319,19 @@ function openTarget(name) {
   return result.status === 0;
 }
 
+function openFile(filePath) {
+  const sys = platform();
+  if (sys === "win32") {
+    spawnSync("cmd", ["/c", "start", "", filePath], { stdio: "ignore" });
+    return;
+  }
+  if (sys === "darwin") {
+    spawnSync("open", [filePath], { stdio: "ignore" });
+    return;
+  }
+  spawnSync("xdg-open", [filePath], { stdio: "ignore" });
+}
+
 function defaultSkillDest() {
   const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
   return join(codexHome, "skills", "frontier-model-collaboration");
@@ -385,6 +399,131 @@ function smoke(flags) {
   };
 }
 
+function htmlEscape(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function jsString(value) {
+  return JSON.stringify(String(value ?? ""));
+}
+
+function coachPanel(flags) {
+  const state = readState();
+  writeWorkspaceStatus(state);
+  const from = state.activeOwner || flags.from || "codex";
+  const to = state.handoffTo || flags.to || "claude";
+  const mode = state.outputFormat || flags.format || "REVIEW_ONLY";
+  const task = state.task || flags.task || "Review this work and tell the primary operator what is risky.";
+  const packet = createPacket({
+    from,
+    to,
+    format: mode,
+    task,
+    files: Array.isArray(state.allowedFiles) ? state.allowedFiles.join(",") : "",
+    policy: state.costProfile?.policy || flags.policy || "balanced",
+    risk: state.costProfile?.risk || flags.risk || "medium",
+    context: state.costProfile?.context || flags.context || "medium",
+  });
+  const nextStep = state.mode === "complete"
+    ? "No active handoff. Press Copy Handoff when you want to send work to another model."
+    : `Paste the handoff into ${to}. When ${to} stops answering, copy the answer back to the primary operator.`;
+  const body = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FMC Coach</title>
+  <style>
+    :root { color-scheme: dark; --bg:#07090d; --panel:#111722; --panel2:#172231; --line:#294258; --text:#eff7ff; --muted:#9db0c3; --accent:#7ee3f5; --ok:#8ae6a8; --warn:#ffcf70; --danger:#ff7d7d; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; background: radial-gradient(circle at 15% 10%, rgba(126,227,245,.16), transparent 32%), linear-gradient(135deg, #07090d, #0b1119 55%, #090d13); color:var(--text); font-family: Inter, Segoe UI, system-ui, sans-serif; letter-spacing:0; }
+    .wrap { width:min(1120px, 100%); margin:0 auto; padding:24px; }
+    .signal { display:flex; align-items:center; gap:12px; color:var(--ok); font-weight:800; font-size:clamp(22px, 4vw, 44px); line-height:1.05; margin:0 0 18px; }
+    .dot { width:18px; height:18px; border-radius:50%; background:var(--ok); box-shadow:0 0 28px var(--ok); animation:pulse 1.4s infinite; flex:0 0 auto; }
+    @keyframes pulse { 0%,100%{opacity:.45; transform:scale(.8)} 50%{opacity:1; transform:scale(1.15)} }
+    .grid { display:grid; grid-template-columns: 1.1fr .9fr; gap:16px; }
+    .card { border:1px solid var(--line); background:linear-gradient(180deg, rgba(17,23,34,.96), rgba(13,18,28,.96)); border-radius:8px; padding:18px; box-shadow:0 18px 60px rgba(0,0,0,.35); }
+    h1,h2,p { margin-top:0; }
+    h2 { font-size:18px; color:var(--accent); text-transform:uppercase; letter-spacing:.08em; }
+    .status { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; }
+    .pill { border:1px solid var(--line); background:var(--panel2); border-radius:8px; padding:12px; min-height:70px; }
+    .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+    .value { font-size:22px; font-weight:800; margin-top:4px; overflow-wrap:anywhere; }
+    .next { font-size:24px; line-height:1.25; color:var(--text); }
+    .buttons { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:12px; margin-top:16px; }
+    button, a.button { min-height:64px; border:1px solid var(--line); border-radius:8px; background:#10283a; color:var(--text); font-size:18px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; text-decoration:none; text-align:center; padding:10px; }
+    button:hover, a.button:hover { border-color:var(--accent); box-shadow:0 0 0 3px rgba(126,227,245,.12); }
+    .primary { background:#12485c; }
+    .warn { background:#3b2b10; }
+    .danger { background:#3a1414; }
+    textarea { width:100%; min-height:260px; resize:vertical; border:1px solid var(--line); border-radius:8px; background:#071019; color:var(--text); padding:14px; font:14px/1.45 Consolas, monospace; }
+    .small { color:var(--muted); font-size:14px; }
+    .toast { position:fixed; right:18px; bottom:18px; background:#10283a; border:1px solid var(--accent); padding:14px 18px; border-radius:8px; color:var(--text); display:none; box-shadow:0 12px 36px rgba(0,0,0,.45); }
+    @media (max-width: 860px) { .grid, .status, .buttons { grid-template-columns:1fr; } .wrap { padding:14px; } }
+    @media (prefers-reduced-motion: reduce) { .dot { animation:none; } }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="signal"><span class="dot"></span><span>${htmlEscape(activationLine({ from, to, mode }))}</span></div>
+    <section class="grid">
+      <div class="card">
+        <h2>Next Step</h2>
+        <p class="next">${htmlEscape(nextStep)}</p>
+        <div class="buttons">
+          <button class="primary" onclick="copyPacket()">Copy Handoff</button>
+          <a class="button" href="https://claude.ai" target="_blank" rel="noreferrer">Open Claude</a>
+          <a class="button" href="https://chatgpt.com" target="_blank" rel="noreferrer">Open ChatGPT</a>
+          <button class="warn" onclick="copyHandback()">Copy Handback Phrase</button>
+        </div>
+        <p class="small">This panel is local. It does not call any AI model by itself and does not send your files anywhere.</p>
+      </div>
+      <div class="card">
+        <h2>Current Owner</h2>
+        <div class="status">
+          <div class="pill"><div class="label">Primary</div><div class="value">${htmlEscape(from)}</div></div>
+          <div class="pill"><div class="label">Secondary</div><div class="value">${htmlEscape(to)}</div></div>
+          <div class="pill"><div class="label">Mode</div><div class="value">${htmlEscape(mode)}</div></div>
+          <div class="pill"><div class="label">Lane</div><div class="value">${htmlEscape(state.costProfile?.recommendedLane || to)}</div></div>
+        </div>
+      </div>
+    </section>
+    <section class="card" style="margin-top:16px">
+      <h2>Clipboard Packet</h2>
+      <textarea id="packet" spellcheck="false">${htmlEscape(packet)}</textarea>
+    </section>
+  </main>
+  <div id="toast" class="toast"></div>
+  <script>
+    const packet = ${jsString(packet)};
+    function show(message) {
+      const el = document.getElementById('toast');
+      el.textContent = message;
+      el.style.display = 'block';
+      setTimeout(() => el.style.display = 'none', 2500);
+    }
+    async function copyText(text, message) {
+      try {
+        await navigator.clipboard.writeText(text);
+        show(message);
+      } catch {
+        document.getElementById('packet').select();
+        show('Select text shown; press Ctrl+C.');
+      }
+    }
+    function copyPacket() { copyText(packet, 'Handoff copied. Paste into ${htmlEscape(to)}.'); }
+    function copyHandback() { copyText('FMC handback from ${htmlEscape(to)}: ', 'Handback phrase copied. Paste into primary chat.'); }
+  </script>
+</body>
+</html>`;
+  writeFileSync(COACH_PANEL_FILE, body);
+  return COACH_PANEL_FILE;
+}
+
 function printHelp() {
   console.log(`Frontier Model Collaboration Switchboard
 
@@ -392,6 +531,8 @@ Usage:
   fmc install-skill
   fmc smoke
   fmc doctor
+  fmc coach --open
+  fmc copy --to claude --task "Review this bug"
   fmc handoff --from codex --to claude --task "Review this diff" --files "app/a.js,lib/b.js" --copy --notify
   fmc recommend --task "Review agent prompt transfer behavior" --risk high --context medium --policy balanced
   fmc state --owner codex --mode implementation --task "Fix transfer latency"
@@ -414,10 +555,12 @@ Options:
 
 const { command, flags } = parseArgs(process.argv.slice(2));
 
-if (command === "handoff") {
+if (command === "handoff" || command === "copy" || command === "copy-handoff" || command === "voice-copy") {
+  const voiceFriendlyCopy = command !== "handoff";
+  if (voiceFriendlyCopy) flags.copy = true;
   const packet = createPacket(flags);
   const to = flags.to || "review-model";
-  const from = flags.from || "primary";
+  const from = flags.from || "codex";
   const mode = flags.format || "REVIEW_ONLY";
   writeState({
     activeOwner: from,
@@ -440,9 +583,17 @@ if (command === "handoff") {
     allowedFiles: arrayValue(flags.files),
     costProfile: costProfile(flags),
   });
-  console.log(packet);
-  if (flags.copy) {
-    console.error(copyToClipboard(packet) ? "Copied handoff packet to clipboard." : "Clipboard copy was not available.");
+  const copied = flags.copy ? copyToClipboard(packet) : false;
+  if (voiceFriendlyCopy) {
+    console.log(`${activationLine({ from, to, mode })}
+${copied ? "Copied handoff packet to clipboard." : "Clipboard copy was not available."}
+Badge file: ${VISIBLE_STATUS_FILE}
+Next: paste into ${to}.`);
+  } else {
+    console.log(packet);
+  }
+  if (flags.copy && !voiceFriendlyCopy) {
+    console.error(copied ? "Copied handoff packet to clipboard." : "Clipboard copy was not available.");
   }
   if (flags.notify) {
     notify("Frontier Model Handoff", `Switching from ${from} to ${to}`);
@@ -487,6 +638,11 @@ Next:
   const result = doctor(flags);
   console.log(JSON.stringify(result, null, 2));
   if (!result.ok) process.exitCode = 1;
+} else if (command === "coach" || command === "panel") {
+  const file = coachPanel(flags);
+  if (flags.open) openFile(file);
+  console.log(`FMC coach panel ready: ${file}
+Open it in a browser, or run with --open.`);
 } else if (command === "smoke") {
   const result = smoke(flags);
   console.log(`${result.active}
